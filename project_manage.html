@@ -150,11 +150,11 @@
             </div>
             
             <div class="setup-row">
-                <label>📁 파일 업로드 (Excel/CSV):</label> <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" />
+                <label>📁 파일 업로드 (Excel):</label> <input type="file" id="file-upload" accept=".xlsx, .xls" />
             </div>
             
             <div class="excel-panel" id="excel-panel">
-                <div class="form-group" id="sheet-wrapper"><label>📑 시트 선택:</label> <select id="sheet-select" onchange="loadColumnsFromSheet()"></select></div>
+                <div class="form-group"><label>📑 시트 선택:</label> <select id="sheet-select" onchange="loadColumnsFromSheet()"></select></div>
                 <div class="form-group"><label>📌 대상명 열:</label> <select id="name-col-select"></select></div>
                 <div class="form-group"><label>📝 가져올 세부정보:</label> <div id="detail-cols-container" style="display:flex; gap:15px; flex-wrap:wrap; background:#fff; padding:8px; border:1px solid #ccc; border-radius:4px; flex-grow:1;"></div></div>
                 <button class="basic-btn" onclick="importExcelData()" style="background:#2ECC71;">✅ 데이터 가져오기</button>
@@ -217,16 +217,14 @@
             '2026-05-24':'석가탄신일','2026-05-25':'대체휴무','2026-06-03':'지방선거','2026-06-06':'현충일'
         };
 
-        // 안전한 문자열 변환 함수 (undefined 방지 코어 로직)
+        // 안전한 문자열 변환 (undefined 완벽 차단)
         function getSafeStr(val) {
             if (val == null) return '';
             const s = String(val).trim();
             return (s.toLowerCase() === 'undefined') ? '' : s;
         }
 
-        // ==========================================
-        // UI 리사이징
-        // ==========================================
+        // UI 패널 리사이징 로직
         const leftSidebar = document.getElementById('left-sidebar');
         const resizerLeft = document.getElementById('resizer-left');
         const rightSidebar = document.getElementById('right-sidebar');
@@ -277,9 +275,7 @@
             else { content.style.display = 'none'; btn.innerText = '설정 펴기 🔽'; }
         }
 
-        // ==========================================
-        // 상세 정보 관리 로직 (에디터 & undefined 방지)
-        // ==========================================
+        // 상세 정보 편집 및 화면 업데이트 로직
         function renderDetailsPanel(taskId) {
             let task = tasks.find(t => t.id === taskId);
             if (!task) return;
@@ -344,9 +340,7 @@
             if (task && task.name !== newName) { task.name = getSafeStr(newName); renderAllTasks(); }
         }
 
-        // ==========================================
-        // 대상(Task) 수동 추가
-        // ==========================================
+        // 대상 수동 추가
         function addNewTask() {
             const input = document.getElementById('new-task-input');
             const val = getSafeStr(input.value);
@@ -360,9 +354,7 @@
             input.value = ''; renderAllTasks();
         }
 
-        // ==========================================
-        // 저장 및 불러오기 (undefined 정화 로직 포함)
-        // ==========================================
+        // 파일 저장 & 불러오기 기능
         async function saveData() {
             const state = { startDate: document.getElementById('start-date').value, endDate: document.getElementById('end-date').value, memberNames: document.getElementById('member-names').value, members: members, memberColors: memberColors, customHolidays: customHolidays, tasks: tasks };
             const jsonContent = JSON.stringify(state, null, 2);
@@ -415,6 +407,7 @@
             reader.readAsText(file);
         }
 
+        // 캘린더 생성 및 날짜 로직
         function formatDate(d) { const date = new Date(d); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
         function parseLocal(s) { const p = s.split('-'); const d = new Date(p[0], p[1]-1, p[2]); d.setHours(0,0,0,0); return d; }
         function isWorkingDay(dateStr) { const d = parseLocal(dateStr); return !(d.getDay() === 0 || d.getDay() === 6 || baseHolidays[dateStr] || customHolidays[dateStr]); }
@@ -508,15 +501,23 @@
 
         function createCardDOM(task) {
             let card = document.createElement('div'); card.className = `task-card ${task.completed ? 'completed' : ''}`; card.id = task.id; card.draggable = true; card.ondragstart = e => e.dataTransfer.setData("text", task.id);
-            card.onclick = e => { e.stopPropagation(); currentSelectedTaskId = task.id; renderDetailsPanel(task.id); if(document.getElementById('right-sidebar').style.display === 'none') toggleSidebar('right-sidebar'); };
+            card.onclick = e => {
+                e.stopPropagation(); currentSelectedTaskId = task.id; renderDetailsPanel(task.id);
+                if(document.getElementById('right-sidebar').style.display === 'none') toggleSidebar('right-sidebar');
+            };
             card.ondblclick = e => { e.stopPropagation(); task.completed = !task.completed; renderAllTasks(); };
             
-            // 툴팁 렌더링 시 undefined 완전 차단
-            let tooltip = Array.isArray(task.details) && task.details.length > 0 
-                          ? task.details.map(d => `${getSafeStr(d.key)}: ${getSafeStr(d.value)}`).join('\n') 
-                          : "세부 정보가 없습니다.";
+            let tooltipHTML = "";
+            if (Array.isArray(task.details) && task.details.length > 0) {
+                tooltipHTML = task.details.map(d => {
+                    let k = getSafeStr(d.key), v = getSafeStr(d.value);
+                    if (k === '' && v === '') return '';
+                    return `${k}${k ? ': ' : ''}${v}`;
+                }).filter(Boolean).join('\n');
+            }
+            if (!tooltipHTML) tooltipHTML = "세부 정보가 없습니다.";
                           
-            card.innerHTML = `<div class="card-text"><b>${getSafeStr(task.name)}</b> (${task.duration}일)</div><div class="delete-btn" onclick="deleteTask(event, '${task.id}')">❌</div><div class="tooltip">${tooltip}</div>`;
+            card.innerHTML = `<div class="card-text"><b>${getSafeStr(task.name)}</b> (${task.duration}일)</div><div class="delete-btn" onclick="deleteTask(event, '${task.id}')">❌</div><div class="tooltip">${tooltipHTML}</div>`;
             return card;
         }
 
@@ -563,46 +564,36 @@
         });
 
         // ==========================================
-        // 엑셀 업로드 로직 (CSV 한글 및 undefined 필터 강화)
+        // 오직 Excel 파싱만을 위한 로직 (XLSX.read 방식 복원)
         // ==========================================
-        document.getElementById('file-upload').addEventListener('change', function(e) {
+        document.getElementById('file-upload').onchange = e => {
             const f = e.target.files[0];
             if (!f) return;
-            const r = new FileReader();
-            r.onload = function(ev) {
-                // CSV 전용 로직 복구 (한글 깨짐 및 포맷 보존)
-                if (f.name.toLowerCase().endsWith('.csv')) {
-                    const content = ev.target.result;
-                    const rows = content.split('\n').map(row => row.trim()).filter(row => row);
-                    if (rows.length < 2) return alert("데이터가 부족합니다.");
-                    const headers = rows[0].split(',').map(h => h.trim());
-                    window.tempRows = [];
-                    for (let i = 1; i < rows.length; i++) {
-                        let cols = rows[i].split(',');
-                        let obj = {};
-                        headers.forEach((h, j) => { obj[h] = cols[j] ? cols[j].trim() : ''; });
-                        window.tempRows.push(obj);
-                    }
-                    document.getElementById('name-col-select').innerHTML = headers.map(c => `<option value="${c}">${c}</option>`).join('');
-                    document.getElementById('detail-cols-container').innerHTML = headers.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join('');
-                    document.getElementById('excel-panel').style.display = 'block';
-                    document.getElementById('sheet-wrapper').style.display = 'none';
-                } else {
-                    const wb = XLSX.read(new Uint8Array(ev.target.result), {type: 'array'});
-                    document.getElementById('sheet-select').innerHTML = wb.SheetNames.map(n => `<option value="${n}">${n}</option>`).join('');
-                    document.getElementById('sheet-wrapper').style.display = 'flex';
-                    window.currentWb = wb;
-                    loadColumnsFromSheet();
-                    document.getElementById('excel-panel').style.display = 'block';
+            const r = new FileReader(); 
+            r.onload = ev => { 
+                try {
+                    const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'}); 
+                    document.getElementById('sheet-select').innerHTML = wb.SheetNames.map(n => `<option value="${n}">${n}</option>`).join(''); 
+                    window.currentWb = wb; 
+                    loadColumnsFromSheet(); 
+                    document.getElementById('excel-panel').style.display = 'block'; 
+                } catch(err) {
+                    alert('엑셀 파일을 읽는 중 오류가 발생했습니다. 올바른 파일인지 확인해주세요.');
                 }
-            };
-            if (f.name.toLowerCase().endsWith('.csv')) r.readAsText(f, "EUC-KR"); else r.readAsArrayBuffer(f);
-        });
+            }; 
+            r.readAsArrayBuffer(f);
+        };
         
         function loadColumnsFromSheet() { 
-            const n = document.getElementById('sheet-select').value, rows = XLSX.utils.sheet_to_json(window.currentWb.Sheets[n], {defval:""});
+            const n = document.getElementById('sheet-select').value;
+            const rows = XLSX.utils.sheet_to_json(window.currentWb.Sheets[n], {defval:""}); 
             if(rows.length === 0) return;
-            const cols = Object.keys(rows[0]).filter(c => !c.startsWith('__EMPTY')); 
+            
+            // __EMPTY 및 빈 값을 제외한 실제 열 이름만 수집
+            let colSet = new Set();
+            rows.forEach(r => Object.keys(r).forEach(k => colSet.add(k)));
+            const cols = Array.from(colSet).filter(c => !c.startsWith('__EMPTY') && String(c).trim() !== '');
+            
             document.getElementById('name-col-select').innerHTML = cols.map(c => `<option value="${c}">${c}</option>`).join(''); 
             document.getElementById('detail-cols-container').innerHTML = cols.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join(''); 
             window.tempRows = rows; 
@@ -611,14 +602,20 @@
         function importExcelData() { 
             const nCol = document.getElementById('name-col-select').value;
             const checked = Array.from(document.querySelectorAll('#detail-cols-container input:checked')).map(cb => cb.value); 
+            
             window.tempRows.forEach((row, i) => { 
-                let detailsArr = checked.map(c => { return { key: getSafeStr(c), value: getSafeStr(row[c]) }; });
+                let detailsArr = checked.map(c => { 
+                    return { key: getSafeStr(c), value: getSafeStr(row[c]) }; 
+                });
                 let tName = getSafeStr(row[nCol]) || `새 대상 ${i+1}`;
                 tasks.push({ id: 't-'+Date.now()+'-'+i, name: tName, details: detailsArr, status: 'pending', duration: 3, completed: false, member: null, startDate: null }); 
             }); 
-            document.getElementById('excel-panel').style.display = 'none'; renderAllTasks(); 
+            
+            document.getElementById('excel-panel').style.display = 'none'; 
+            document.getElementById('file-upload').value = '';
+            renderAllTasks(); 
         }
-        function cancelImport() { document.getElementById('excel-panel').style.display = 'none'; }
+        function cancelImport() { document.getElementById('excel-panel').style.display = 'none'; document.getElementById('file-upload').value = ''; }
 
         generateCalendar();
     </script>
