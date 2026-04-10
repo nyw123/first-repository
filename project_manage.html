@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>사내용 프로젝트 매니저</title>
-    <script src="xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; user-select: none; }
         
@@ -150,7 +150,7 @@
             </div>
             
             <div class="setup-row">
-                <label>📁 파일 업로드 (Excel/CSV):</label> <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" />
+                <label>📁 엑셀 업로드:</label> <input type="file" id="file-upload" accept=".xlsx, .xls" />
             </div>
             
             <div class="excel-panel" id="excel-panel">
@@ -404,7 +404,7 @@
             if (td && t) { let dz = td.querySelector(`.member-dropzone[data-member='${t.member}']`); if (dz && dz.dataset.date) { let c = 0, start = parseLocal(t.startDate), end = parseLocal(dz.dataset.date); if (end < start) c = 1; else while(start <= end) { if(isWorkingDay(formatDate(start))) c++; start.setDate(start.getDate() + 1); } if (t.duration !== c) { t.duration = c; renderAllTasks(); } } }
         });
 
-        // 💡 엑셀 전용 파일 업로드 로직 (최고 호환성 & 컬럼 완전 수집)
+        // 💡 엑셀 전용 파일 업로드 (2차원 배열 파싱으로 숨은 데이터, 빈 줄 완벽 해결)
         document.getElementById('file-upload').addEventListener('change', function(e) {
             const f = e.target.files[0];
             if (!f) return;
@@ -426,21 +426,53 @@
         
         function loadColumnsFromSheet() { 
             const n = document.getElementById('sheet-select').value;
-            const rows = XLSX.utils.sheet_to_json(window.currentWb.Sheets[n], {defval:""});
-            if(rows.length === 0) return alert("시트에 데이터가 없습니다.");
+            // header: 1 옵션으로 시트를 2차원 배열 원형 그대로 추출 (빈 줄 포함)
+            const rawRows = XLSX.utils.sheet_to_json(window.currentWb.Sheets[n], {header: 1, defval: ""});
+            if(rawRows.length === 0) return alert("시트에 데이터가 없습니다.");
             
-            // 모든 행을 뒤져서 모든 컬럼 이름을 100% 수집
-            let colSet = new Set();
-            rows.forEach(r => Object.keys(r).forEach(k => colSet.add(k)));
-            let cols = Array.from(colSet);
-            
-            // __EMPTY 제거 시도. 만약 제거했더니 남는게 없으면 (헤더가 없는 엑셀) 원본 유지
-            let validCols = cols.filter(c => !c.startsWith('__EMPTY') && getSafeStr(c) !== '');
-            if(validCols.length === 0) validCols = cols;
+            // 1. 위쪽 빈 줄들을 건너뛰고, 글자가 하나라도 있는 실제 '제목 행(Header Row)' 찾기
+            let headerIdx = 0;
+            for (let i = 0; i < rawRows.length; i++) {
+                if (rawRows[i].some(cell => getSafeStr(cell) !== '')) {
+                    headerIdx = i;
+                    break;
+                }
+            }
 
-            document.getElementById('name-col-select').innerHTML = validCols.map(c => `<option value="${c}">${c}</option>`).join(''); 
-            document.getElementById('detail-cols-container').innerHTML = validCols.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join(''); 
-            window.tempRows = rows; 
+            // 2. 제목들 추출 (중간에 이름 없는 열이 있어도 고유 이름 부여해서 살려냄)
+            let headers = [];
+            let emptyCount = 1;
+            rawRows[headerIdx].forEach((col) => {
+                let colName = getSafeStr(col);
+                if (colName === '') colName = `(이름없음 ${emptyCount++})`;
+                
+                // 혹시 같은 이름의 열이 여러 개면 넘버링 추가
+                let finalName = colName;
+                let dupCount = 1;
+                while (headers.includes(finalName)) {
+                    finalName = `${colName} (${dupCount++})`;
+                }
+                headers.push(finalName);
+            });
+
+            // 3. 제목 행 아래부터 실제 데이터 추출
+            let parsedData = [];
+            for (let i = headerIdx + 1; i < rawRows.length; i++) {
+                let rowData = rawRows[i];
+                // 내용이 전혀 없는 완전 빈 줄은 패스
+                if (!rowData.some(cell => getSafeStr(cell) !== '')) continue;
+                
+                let obj = {};
+                headers.forEach((h, j) => {
+                    obj[h] = getSafeStr(rowData[j]);
+                });
+                parsedData.push(obj);
+            }
+
+            // 4. 추출한 열 이름들을 UI에 반영
+            document.getElementById('name-col-select').innerHTML = headers.map(c => `<option value="${c}">${c}</option>`).join(''); 
+            document.getElementById('detail-cols-container').innerHTML = headers.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join(''); 
+            window.tempRows = parsedData; 
         }
         
         function importExcelData() { 
