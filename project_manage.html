@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>사내용 프로젝트 매니저</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="xlsx.full.min.js"></script>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; user-select: none; }
         
@@ -150,11 +150,11 @@
             </div>
             
             <div class="setup-row">
-                <label>📁 파일 업로드 (Excel):</label> <input type="file" id="file-upload" accept=".xlsx, .xls" />
+                <label>📁 파일 업로드 (Excel/CSV):</label> <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" />
             </div>
             
             <div class="excel-panel" id="excel-panel">
-                <div class="form-group"><label>📑 시트 선택:</label> <select id="sheet-select" onchange="loadColumnsFromSheet()"></select></div>
+                <div class="form-group" id="sheet-wrapper"><label>📑 시트 선택:</label> <select id="sheet-select" onchange="loadColumnsFromSheet()"></select></div>
                 <div class="form-group"><label>📌 대상명 열:</label> <select id="name-col-select"></select></div>
                 <div class="form-group"><label>📝 가져올 세부정보:</label> <div id="detail-cols-container" style="display:flex; gap:15px; flex-wrap:wrap; background:#fff; padding:8px; border:1px solid #ccc; border-radius:4px; flex-grow:1;"></div></div>
                 <button class="basic-btn" onclick="importExcelData()" style="background:#2ECC71;">✅ 데이터 가져오기</button>
@@ -213,10 +213,11 @@
         let customHolidays = {};
         const baseHolidays = {'2026-01-01':'신정','2026-02-16':'설날','2026-02-17':'설날','2026-02-18':'설날','2026-03-01':'삼일절','2026-03-02':'대체휴무','2026-05-01':'근로자의날','2026-05-05':'어린이날','2026-05-24':'석가탄신일','2026-05-25':'대체휴무','2026-06-03':'지방선거','2026-06-06':'현충일'};
 
-        // 💡 핵심 수정: undefined 방지 완벽 보호막
+        // 💡 강력한 undefined/null 차단 함수
         function getSafeStr(val) {
-            if (val === undefined || val === null || String(val).toLowerCase() === 'undefined') return '';
-            return String(val).trim();
+            if (val === undefined || val === null) return '';
+            const s = String(val).trim();
+            return (s.toLowerCase() === 'undefined' || s.toLowerCase() === 'null') ? '' : s;
         }
 
         // UI 이벤트 리스너 (리사이징 & 토글)
@@ -272,7 +273,7 @@
                     document.getElementById('start-date').value = s.startDate || s.sd || ""; document.getElementById('end-date').value = s.endDate || s.ed || ""; document.getElementById('member-names').value = s.memberNames || s.mn || "";
                     members = s.members || []; memberColors = s.memberColors || {}; customHolidays = s.customHolidays || {}; tasks = s.tasks || [];
                     tasks.forEach(t => {
-                        t.name = getSafeStr(t.name);
+                        t.name = getSafeStr(t.name) || '이름 없음';
                         if (typeof t.details === 'string') t.details = t.details.split('\n').map(l => { let x = l.indexOf(':'); return x > -1 ? {key: getSafeStr(l.substr(0, x)), value: getSafeStr(l.substr(x+1))} : {key: '정보', value: getSafeStr(l)}; });
                         if (Array.isArray(t.details)) t.details.forEach(d => { d.key = getSafeStr(d.key); d.value = getSafeStr(d.value); });
                     });
@@ -367,8 +368,19 @@
             let card = document.createElement('div'); card.className = `task-card ${t.completed ? 'completed' : ''}`; card.id = t.id; card.draggable = true; card.ondragstart = e => e.dataTransfer.setData("text", t.id);
             card.onclick = e => { e.stopPropagation(); currentSelectedTaskId = t.id; renderDetailsPanel(t.id); if(document.getElementById('right-sidebar').style.display === 'none') toggleSidebar('right-sidebar'); };
             card.ondblclick = e => { e.stopPropagation(); t.completed = !t.completed; renderAllTasks(); };
-            let tooltip = Array.isArray(t.details) && t.details.length > 0 ? t.details.map(d => `${getSafeStr(d.key)}: ${getSafeStr(d.value)}`).join('\n') : "세부 정보 없음";
-            card.innerHTML = `<div class="card-text"><b>${getSafeStr(t.name)}</b> (${t.duration}일)</div><div class="delete-btn" onclick="deleteTask(event, '${t.id}')">❌</div><div class="tooltip">${tooltip}</div>`;
+            
+            // 툴팁 렌더링 시 undefined 제거 및 예쁜 줄바꿈
+            let tooltipHTML = "";
+            if (Array.isArray(t.details) && t.details.length > 0) {
+                tooltipHTML = t.details.map(d => {
+                    let k = getSafeStr(d.key), v = getSafeStr(d.value);
+                    if (k === '' && v === '') return '';
+                    return `${k}${k ? ': ' : ''}${v}`;
+                }).filter(Boolean).join('\n');
+            }
+            if (!tooltipHTML) tooltipHTML = "세부 정보가 없습니다.";
+
+            card.innerHTML = `<div class="card-text"><b>${getSafeStr(t.name)}</b> (${t.duration}일)</div><div class="delete-btn" onclick="deleteTask(event, '${t.id}')">❌</div><div class="tooltip">${tooltipHTML}</div>`;
             return card;
         }
 
@@ -392,38 +404,60 @@
             if (td && t) { let dz = td.querySelector(`.member-dropzone[data-member='${t.member}']`); if (dz && dz.dataset.date) { let c = 0, start = parseLocal(t.startDate), end = parseLocal(dz.dataset.date); if (end < start) c = 1; else while(start <= end) { if(isWorkingDay(formatDate(start))) c++; start.setDate(start.getDate() + 1); } if (t.duration !== c) { t.duration = c; renderAllTasks(); } } }
         });
 
-        // 엑셀 파싱 로직 (오직 엑셀 안정성 위주)
-        document.getElementById('file-upload').onchange = e => {
-            const f = e.target.files[0]; if (!f) return;
-            const r = new FileReader(); r.onload = ev => { 
+        // 💡 엑셀 전용 파일 업로드 로직 (최고 호환성 & 컬럼 완전 수집)
+        document.getElementById('file-upload').addEventListener('change', function(e) {
+            const f = e.target.files[0];
+            if (!f) return;
+            const r = new FileReader();
+            r.onload = function(ev) {
                 try {
-                    const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'}); 
-                    document.getElementById('sheet-select').innerHTML = wb.SheetNames.map(n => `<option value="${n}">${n}</option>`).join(''); 
-                    window.currentWb = wb; loadColumnsFromSheet(); document.getElementById('excel-panel').style.display = 'block'; 
-                } catch(err) { alert('엑셀 파일 오류'); }
-            }; r.readAsArrayBuffer(f);
-        };
+                    const wb = XLSX.read(new Uint8Array(ev.target.result), {type: 'array'});
+                    document.getElementById('sheet-select').innerHTML = wb.SheetNames.map(n => `<option value="${n}">${n}</option>`).join('');
+                    document.getElementById('sheet-wrapper').style.display = 'flex';
+                    window.currentWb = wb;
+                    loadColumnsFromSheet();
+                    document.getElementById('excel-panel').style.display = 'block';
+                } catch(err) {
+                    alert('엑셀 파일을 읽는 중 오류가 발생했습니다.');
+                }
+            };
+            r.readAsArrayBuffer(f);
+        });
         
         function loadColumnsFromSheet() { 
             const n = document.getElementById('sheet-select').value;
-            // 💡 스마트 헤더 감지: 데이터가 있는 지점을 찾아 헤더를 추출
-            const sheet = window.currentWb.Sheets[n];
-            const rows = XLSX.utils.sheet_to_json(sheet, {defval:""}); if(rows.length === 0) return;
-            let colSet = new Set(); rows.forEach(r => Object.keys(r).forEach(k => { if(!k.startsWith('__EMPTY')) colSet.add(k); }));
-            const cols = Array.from(colSet).filter(c => getSafeStr(c) !== '');
-            document.getElementById('name-col-select').innerHTML = cols.map(c => `<option value="${c}">${c}</option>`).join(''); 
-            document.getElementById('detail-cols-container').innerHTML = cols.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join(''); 
+            const rows = XLSX.utils.sheet_to_json(window.currentWb.Sheets[n], {defval:""});
+            if(rows.length === 0) return alert("시트에 데이터가 없습니다.");
+            
+            // 모든 행을 뒤져서 모든 컬럼 이름을 100% 수집
+            let colSet = new Set();
+            rows.forEach(r => Object.keys(r).forEach(k => colSet.add(k)));
+            let cols = Array.from(colSet);
+            
+            // __EMPTY 제거 시도. 만약 제거했더니 남는게 없으면 (헤더가 없는 엑셀) 원본 유지
+            let validCols = cols.filter(c => !c.startsWith('__EMPTY') && getSafeStr(c) !== '');
+            if(validCols.length === 0) validCols = cols;
+
+            document.getElementById('name-col-select').innerHTML = validCols.map(c => `<option value="${c}">${c}</option>`).join(''); 
+            document.getElementById('detail-cols-container').innerHTML = validCols.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join(''); 
             window.tempRows = rows; 
         }
         
         function importExcelData() { 
-            const nCol = document.getElementById('name-col-select').value, checked = Array.from(document.querySelectorAll('#detail-cols-container input:checked')).map(cb => cb.value); 
+            const nCol = document.getElementById('name-col-select').value;
+            const checked = Array.from(document.querySelectorAll('#detail-cols-container input:checked')).map(cb => cb.value); 
+            
             window.tempRows.forEach((row, i) => { 
-                // 💡 속성 접근 시 trim() 등을 활용해 매칭 정확도 향상
-                let detailsArr = checked.map(c => ({ key: getSafeStr(c), value: getSafeStr(row[c]) }));
-                tasks.push({ id: 't-'+Date.now()+'-'+i, name: getSafeStr(row[nCol]) || `새 대상 ${i+1}`, details: detailsArr, status: 'pending', duration: 3, completed: false, member: null, startDate: null }); 
+                let detailsArr = checked.map(c => { 
+                    return { key: getSafeStr(c), value: getSafeStr(row[c]) }; 
+                });
+                let tName = getSafeStr(row[nCol]) || `새 대상 ${i+1}`;
+                tasks.push({ id: 't-'+Date.now()+'-'+i, name: tName, details: detailsArr, status: 'pending', duration: 3, completed: false, member: null, startDate: null }); 
             }); 
-            document.getElementById('excel-panel').style.display = 'none'; document.getElementById('file-upload').value = ''; renderAllTasks(); 
+            
+            document.getElementById('excel-panel').style.display = 'none'; 
+            document.getElementById('file-upload').value = '';
+            renderAllTasks(); 
         }
         function cancelImport() { document.getElementById('excel-panel').style.display = 'none'; document.getElementById('file-upload').value = ''; }
 
