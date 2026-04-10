@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>사내용 프로젝트 매니저</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="xlsx.full.min.js"></script>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; user-select: none; }
         
@@ -213,7 +213,7 @@
         let customHolidays = {};
         const baseHolidays = {'2026-01-01':'신정','2026-02-16':'설날','2026-02-17':'설날','2026-02-18':'설날','2026-03-01':'삼일절','2026-03-02':'대체휴무','2026-05-01':'근로자의날','2026-05-05':'어린이날','2026-05-24':'석가탄신일','2026-05-25':'대체휴무','2026-06-03':'지방선거','2026-06-06':'현충일'};
 
-        // 💡 강력한 undefined/null 차단 함수
+        // 💡 강력한 undefined/null 차단
         function getSafeStr(val) {
             if (val === undefined || val === null) return '';
             const s = String(val).trim();
@@ -403,75 +403,83 @@
             if (td && t) { let dz = td.querySelector(`.member-dropzone[data-member='${t.member}']`); if (dz && dz.dataset.date) { let c = 0, start = parseLocal(t.startDate), end = parseLocal(dz.dataset.date); if (end < start) c = 1; else while(start <= end) { if(isWorkingDay(formatDate(start))) c++; start.setDate(start.getDate() + 1); } if (t.duration !== c) { t.duration = c; renderAllTasks(); } } }
         });
 
-        // ==========================================
-        // 💡 엑셀 파싱 로직 (A열 기반 강력한 강제 수집)
-        // ==========================================
+        // 💡 핵심 수정: 엑셀 파싱 - 100% 보장형 (BinaryString + 수동 행/열 추출)
         document.getElementById('file-upload').addEventListener('change', function(e) {
             const f = e.target.files[0];
             if (!f) return;
             const r = new FileReader();
             r.onload = function(ev) {
                 try {
-                    const wb = XLSX.read(new Uint8Array(ev.target.result), {type: 'array'});
+                    // 구형/신형, 로컬/CDN 모두 호환되는 절대적인 파싱 방식
+                    const wb = XLSX.read(ev.target.result, {type: 'binary'});
                     document.getElementById('sheet-select').innerHTML = wb.SheetNames.map(n => `<option value="${n}">${n}</option>`).join('');
                     document.getElementById('sheet-wrapper').style.display = 'flex';
                     window.currentWb = wb;
                     loadColumnsFromSheet();
                     document.getElementById('excel-panel').style.display = 'block';
                 } catch(err) {
-                    alert('엑셀 파일을 읽는 중 오류가 발생했습니다.');
+                    alert('엑셀 파일을 읽는 중 오류가 발생했습니다.\n상세: ' + err.message);
                 }
             };
-            r.readAsArrayBuffer(f);
+            // ArrayBuffer 대신 무조건 성공하는 BinaryString 채택
+            r.readAsBinaryString(f);
         });
         
         function loadColumnsFromSheet() { 
-            const n = document.getElementById('sheet-select').value;
-            // header: 1 옵션으로 시트를 2차원 배열로 완벽하게 추출
-            const rawRows = XLSX.utils.sheet_to_json(window.currentWb.Sheets[n], {header: 1, defval: ""});
-            if(rawRows.length < 2) return alert("시트에 충분한 데이터가 없습니다.");
-            
-            // 💡 1. 첫 번째 행(Row 0)을 무조건 열 이름(Header)으로 설정
-            const headerRow = rawRows[0];
-            let headers = [];
-            
-            // 연속된 글자가 있는 칸을 모두 추출 (공백이면 중단)
-            for (let i = 0; i < headerRow.length; i++) {
-                let colName = getSafeStr(headerRow[i]);
-                if (colName === '') break; // 빈 칸이 나오면 열 수집 종료
+            try {
+                const n = document.getElementById('sheet-select').value;
+                const rawRows = XLSX.utils.sheet_to_json(window.currentWb.Sheets[n], {header: 1, defval: ""});
+                if(!rawRows || rawRows.length === 0) return alert("시트에 데이터가 없습니다.");
                 
-                // 중복된 이름 방지
-                let finalName = colName;
-                let dupCount = 1;
-                while (headers.includes(finalName)) {
-                    finalName = `${colName} (${dupCount++})`;
+                // 1. 헤더행 찾기: 데이터가 존재하는 진짜 첫 번째 행 찾기
+                let headerIdx = -1;
+                for (let i = 0; i < rawRows.length; i++) {
+                    if (Array.isArray(rawRows[i]) && rawRows[i].some(cell => getSafeStr(cell) !== '')) {
+                        headerIdx = i;
+                        break;
+                    }
                 }
-                headers.push(finalName);
-            }
 
-            if (headers.length === 0) return alert("첫 번째 줄에 열 이름(Header)이 없습니다.");
+                if (headerIdx === -1) return alert("시트에서 데이터를 찾을 수 없습니다.");
 
-            // 💡 2. 두 번째 행(Row 1)부터 A열(첫 번째 컬럼) 기준으로 데이터 추출
-            let parsedData = [];
-            for (let i = 1; i < rawRows.length; i++) {
-                let rowData = rawRows[i];
-                let firstColValue = getSafeStr(rowData[0]);
-                
-                // A열이 비어있으면 그 아래는 모두 무시하고 수집 종료
-                if (firstColValue === '') break;
-                
-                let obj = {};
-                headers.forEach((h, j) => {
-                    // 나머지 열은 데이터가 없으면 깔끔하게 빈칸 처리
-                    obj[h] = getSafeStr(rowData[j]);
+                let headers = [];
+                let emptyCount = 1;
+                rawRows[headerIdx].forEach((col) => {
+                    let colName = getSafeStr(col);
+                    if (colName === '') colName = `(이름없음 ${emptyCount++})`;
+                    
+                    let finalName = colName;
+                    let dupCount = 1;
+                    while (headers.includes(finalName)) {
+                        finalName = `${colName} (${dupCount++})`;
+                    }
+                    headers.push(finalName);
                 });
-                parsedData.push(obj);
-            }
 
-            // 3. UI 업데이트
-            document.getElementById('name-col-select').innerHTML = headers.map(c => `<option value="${c}">${c}</option>`).join(''); 
-            document.getElementById('detail-cols-container').innerHTML = headers.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join(''); 
-            window.tempRows = parsedData; 
+                // 2. A열 기준으로 그 아래 데이터들 모두 수집
+                let parsedData = [];
+                for (let i = headerIdx + 1; i < rawRows.length; i++) {
+                    let rowData = rawRows[i];
+                    if (!Array.isArray(rowData)) continue;
+                    
+                    let firstColValue = getSafeStr(rowData[0]);
+                    
+                    // A열이 완전히 비어있으면 그 행부터는 종료(무시)
+                    if (firstColValue === '') break;
+                    
+                    let obj = {};
+                    headers.forEach((h, j) => {
+                        obj[h] = getSafeStr(rowData[j]);
+                    });
+                    parsedData.push(obj);
+                }
+
+                document.getElementById('name-col-select').innerHTML = headers.map(c => `<option value="${c}">${c}</option>`).join(''); 
+                document.getElementById('detail-cols-container').innerHTML = headers.map(c => `<label><input type="checkbox" value="${c}" checked> ${c}</label>`).join(''); 
+                window.tempRows = parsedData; 
+            } catch(e) {
+                alert("열 정보를 불러오는 중 오류 발생: " + e.message);
+            }
         }
         
         function importExcelData() { 
