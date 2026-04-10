@@ -55,7 +55,8 @@
         .details-panel { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; flex-direction: column; box-sizing: border-box; flex-shrink: 0; width: 280px; min-width: 200px; }
         .details-content { border: 1px solid #ddd; padding: 10px; border-radius: 4px; background: #f9f9f9; flex-grow: 1; overflow-y: auto; overflow-x: hidden; font-size: 12px; color: #333; line-height: 1.5; }
         
-        .editable-field { background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 4px 6px; outline: none; transition: 0.2s; cursor: text; word-break: break-all;}
+        /* 💡 수정 3: 줄바꿈(white-space: pre-wrap) 속성 적용 */
+        .editable-field { background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 4px 6px; outline: none; transition: 0.2s; cursor: text; white-space: pre-wrap; word-break: break-word;}
         .editable-field:hover { border-color: #d1d5db; background: #fff; }
         .editable-field:focus { border-color: #4A90E2; background: #fff; box-shadow: 0 0 0 2px rgba(74,144,226,0.2); }
         
@@ -73,19 +74,24 @@
         .holiday { background-color: #ffeaea !important; }
         .holiday-name { font-size: 11px; color: red; font-weight: normal; }
 
-        .member-dropzone { border: 1px solid #eee; background: #fff; margin-bottom: 4px; min-height: 40px; border-radius: 4px; padding: 4px; position: relative; }
+        /* 💡 수정 2: 완벽한 수평(세로 정렬)을 위한 높이 고정 및 절대 좌표 디자인 */
+        .member-dropzone { border: 1px solid #eee; background: #fff; margin-bottom: 3px; height: 32px; border-radius: 4px; position: relative; box-sizing: border-box; }
         .member-dropzone.dragover { background: #eef5fc; border-color: #4A90E2; }
-        .member-name { display: block; font-weight: bold; color: #666; font-size: 10px; margin-bottom: 3px; border-bottom: 1px solid #eee; }
+        .member-name { position: absolute; left: 4px; top: 8px; font-weight: bold; color: #666; font-size: 10px; z-index: 1; pointer-events: none; }
 
-        .task-card { background: #6c757d; color: white; padding: 6px; border-radius: 4px; cursor: grab; font-size: 11px; margin-bottom: 3px; position: relative; box-shadow: 0 2px 4px rgba(0,0,0,0.15); z-index: 10; box-sizing: border-box; }
+        .task-card { background: #6c757d; color: white; border-radius: 4px; cursor: grab; font-size: 11px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); z-index: 10; box-sizing: border-box; }
         .task-card:hover { z-index: 99999 !important; }
-        
         .task-card.completed { opacity: 0.4; text-decoration: line-through; border: 1px solid #333; }
         .task-card .card-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: calc(100% - 15px); pointer-events: none; }
 
-        .delete-btn { position: absolute; right: 4px; top: 4px; width: 14px; height: 14px; background: rgba(0,0,0,0.3); color: white; border-radius: 50%; font-size: 9px; display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 30; line-height: 1; }
+        /* 달력 안의 카드는 절대좌표로 꽉 차게, 대기목록의 카드는 상대좌표로 유연하게 */
+        .calendar .task-card { position: absolute; top: -1px; left: -1px; height: calc(100% + 2px); margin: 0; display: flex; align-items: center; padding: 0 6px; }
+        #pending-tasks .task-card { position: relative; padding: 6px; margin-bottom: 5px; }
+
+        .delete-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; background: rgba(0,0,0,0.3); color: white; border-radius: 50%; font-size: 9px; display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 30; line-height: 1; }
         .delete-btn:hover { background: #E74C3C; }
         #pending-tasks .task-card:hover .delete-btn { display: flex; }
+        .calendar .task-card:hover .delete-btn { display: flex; }
 
         .card-start { border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: -5px; z-index: 11; }
         .card-mid { border-radius: 0; margin-left: -5px; margin-right: -5px; z-index: 11; }
@@ -227,7 +233,6 @@
         let isResizingLeft = false, isResizingRight = false;
         let startX = 0, startWidthLeft = 0, startWidthRight = 0;
 
-        // mousedown 이벤트 리스너 방식 사용 (충돌 방지)
         resizerLeft.addEventListener('mousedown', function(e) {
             isResizingLeft = true;
             startX = e.clientX;
@@ -254,7 +259,6 @@
             }
         });
 
-        // 모든 mouseup 이벤트를 통일하여 관리
         document.addEventListener('mouseup', function() {
             if (isResizingLeft || isResizingRight) {
                 isResizingLeft = false;
@@ -273,7 +277,6 @@
             const sidebar = document.getElementById(sidebarId);
             const toggleBar = document.getElementById(sidebarId + '-toggle');
             const resizer = sidebarId === 'left-sidebar' ? resizerLeft : resizerRight;
-            
             if (sidebar.style.display === 'none') {
                 sidebar.style.display = 'flex';
                 toggleBar.style.display = 'none';
@@ -471,18 +474,40 @@
         function parseLocal(s) { const p = s.split('-'); const d = new Date(p[0], p[1]-1, p[2]); d.setHours(0,0,0,0); return d; }
         function isWorkingDay(dateStr) { const d = parseLocal(dateStr); return !(d.getDay() === 0 || d.getDay() === 6 || baseHolidays[dateStr] || customHolidays[dateStr]); }
 
+        // ==========================================
+        // 💡 수정 2: 자유 배치 및 자동 축소 (Auto-Truncate)
+        // ==========================================
         function calculateAllSchedules() {
             members.forEach(member => {
                 let memberTasks = tasks.filter(t => t.member === member && t.status === 'scheduled');
                 memberTasks.sort((a, b) => parseLocal(a.startDate) - parseLocal(b.startDate));
+                
                 let nextAvailableDate = null;
+
                 memberTasks.forEach((task) => {
-                    let currentStart = nextAvailableDate ? new Date(nextAvailableDate) : parseLocal(task.startDate);
-                    while (!isWorkingDay(formatDate(currentStart))) { currentStart.setDate(currentStart.getDate() + 1); }
+                    let currentStart = parseLocal(task.startDate);
+                    
+                    // 빈 공간(Gap) 유지: 예정 시작일이 다음 가능일보다 빠를 때만 뒤로 미룸
+                    if (nextAvailableDate && currentStart < new Date(nextAvailableDate)) {
+                        currentStart = new Date(nextAvailableDate);
+                    }
+
+                    // 휴일이 있으면 다음 근무일로 계속 넘김 (도미노 밀림 유지)
+                    while (!isWorkingDay(formatDate(currentStart))) {
+                        currentStart.setDate(currentStart.getDate() + 1);
+                    }
+
                     task.startDate = formatDate(currentStart);
+
                     let found = 0, end = new Date(currentStart);
-                    while (found < task.duration) { if (isWorkingDay(formatDate(end))) found++; if (found < task.duration) end.setDate(end.getDate() + 1); }
-                    let next = new Date(end); next.setDate(next.getDate() + 1); nextAvailableDate = next;
+                    while (found < task.duration) {
+                        if (isWorkingDay(formatDate(end))) found++;
+                        if (found < task.duration) end.setDate(end.getDate() + 1);
+                    }
+                    
+                    let next = new Date(end);
+                    next.setDate(next.getDate() + 1);
+                    nextAvailableDate = next;
                 });
             });
         }
@@ -527,21 +552,39 @@
             calculateAllSchedules();
             document.querySelectorAll('.calendar .task-card, #pending-tasks .task-card').forEach(e => e.remove());
             tasks.forEach(task => {
-                if (task.status === 'pending') document.getElementById('pending-tasks').appendChild(createCardDOM(task));
-                else {
-                    let curr = parseLocal(task.startDate), workDates = []; while(workDates.length < task.duration) { let dStr = formatDate(curr); if(isWorkingDay(dStr)) workDates.push(dStr); curr.setDate(curr.getDate() + 1); }
+                if (task.status === 'pending') {
+                    document.getElementById('pending-tasks').appendChild(createCardDOM(task));
+                } else {
+                    let curr = parseLocal(task.startDate), workDates = []; 
+                    while(workDates.length < task.duration) { let dStr = formatDate(curr); if(isWorkingDay(dStr)) workDates.push(dStr); curr.setDate(curr.getDate() + 1); }
+                    
                     let chunks = [], currentChunk = [];
                     workDates.forEach(dStr => {
                         let dz = document.querySelector(`.member-dropzone[data-date='${dStr}'][data-member='${task.member}']`); if (!dz) return;
-                        if (currentChunk.length > 0) { if (parseLocal(dStr) - parseLocal(currentChunk[currentChunk.length-1].date) > 86400000 || dz.closest('tr') !== currentChunk[0].dz.closest('tr')) { chunks.push(currentChunk); currentChunk = []; } }
+                        if (currentChunk.length > 0) { 
+                            let lastD = parseLocal(currentChunk[currentChunk.length-1].date);
+                            let thisD = parseLocal(dStr);
+                            // 하루 넘게 차이나거나 줄(주)이 다르면 조각을 나눔
+                            if (thisD - lastD > 86400000 || dz.closest('tr') !== currentChunk[0].dz.closest('tr')) { 
+                                chunks.push(currentChunk); currentChunk = []; 
+                            } 
+                        }
                         currentChunk.push({date: dStr, dz: dz});
                     });
                     if (currentChunk.length > 0) chunks.push(currentChunk);
+                    
                     chunks.forEach((chunk, i) => {
-                        let card = createCardDOM(task); card.style.width = `calc(${chunk.length * 100}% + ${(chunk.length-1) * 9}px)`;
+                        let card = createCardDOM(task); 
+                        card.style.width = `calc(${chunk.length * 100}% + ${(chunk.length-1) * 9}px)`;
                         card.style.backgroundColor = memberColors[task.member] || '#4A90E2';
-                        if (chunks.length > 1) { if (i === 0) card.classList.add('card-start'); else if (i === chunks.length - 1) card.classList.add('card-end'); else card.classList.add('card-mid'); }
-                        if (i === chunks.length - 1) { let h = document.createElement('div'); h.className = 'resize-handle'; h.onmousedown = e => startResize(e, task.id); card.appendChild(h); }
+                        if (chunks.length > 1) { 
+                            if (i === 0) card.classList.add('card-start'); 
+                            else if (i === chunks.length - 1) card.classList.add('card-end'); 
+                            else card.classList.add('card-mid'); 
+                        }
+                        if (i === chunks.length - 1) { 
+                            let h = document.createElement('div'); h.className = 'resize-handle'; h.onmousedown = e => startResize(e, task.id); card.appendChild(h); 
+                        }
                         chunk[0].dz.appendChild(card);
                     });
                 }
@@ -572,8 +615,41 @@
         }
 
         function deleteTask(e, id) { e.stopPropagation(); if (confirm("삭제할까요?")) { tasks = tasks.filter(t => t.id !== id); renderAllTasks(); } }
-        function dropToCalendar(e, dz) { e.preventDefault(); dz.classList.remove('dragover'); let task = tasks.find(t => t.id === e.dataTransfer.getData("text")); if (task) { task.status = 'scheduled'; task.member = dz.dataset.member; task.startDate = dz.dataset.date; renderAllTasks(); } }
-        function dropToPending(e) { e.preventDefault(); let task = tasks.find(t => t.id === e.dataTransfer.getData("text")); if (task) { task.status = 'pending'; task.member = null; renderAllTasks(); } }
+        
+        // 💡 수정 2: 달력에 대상을 놓았을 때 겹치지 않게 자동 축소
+        function dropToCalendar(e, dz) { 
+            e.preventDefault(); 
+            dz.classList.remove('dragover'); 
+            let t = tasks.find(x => x.id === e.dataTransfer.getData("text")); 
+            if (t) { 
+                t.status = 'scheduled'; 
+                t.member = dz.dataset.member; 
+                t.startDate = dz.dataset.date; 
+                
+                // 이후에 있는 일정과 겹치는지 확인하고 넘치면 기간을 자름
+                let mTasks = tasks.filter(x => x.member === t.member && x.status === 'scheduled' && x.id !== t.id);
+                let nextTask = mTasks.filter(x => parseLocal(x.startDate) > parseLocal(t.startDate))
+                                     .sort((a, b) => parseLocal(a.startDate) - parseLocal(b.startDate))[0];
+                                     
+                if (nextTask) {
+                    let maxDuration = 0;
+                    let curr = parseLocal(t.startDate);
+                    let nextStart = parseLocal(nextTask.startDate);
+                    while (curr < nextStart) {
+                        if (isWorkingDay(formatDate(curr))) maxDuration++;
+                        curr.setDate(curr.getDate() + 1);
+                    }
+                    if (maxDuration > 0 && t.duration > maxDuration) {
+                        t.duration = maxDuration;
+                    } else if (maxDuration === 0) {
+                        t.duration = 1;
+                    }
+                }
+                renderAllTasks(); 
+            } 
+        }
+        
+        function dropToPending(e) { e.preventDefault(); let t = tasks.find(x => x.id === e.dataTransfer.getData("text")); if (t) { t.status = 'pending'; t.member = null; renderAllTasks(); } }
         function allowDrop(e) { e.preventDefault(); }
         
         function updateDashboard() { 
@@ -586,9 +662,27 @@
         let resizeId = null;
         function startResize(e, id) { e.preventDefault(); e.stopPropagation(); resizeId = id; document.body.classList.add('is-resizing'); }
         
+        // 💡 수정 1: 마우스가 캘린더 줄(Row)을 넘어가도 대상을 자유롭게 늘리고 줄일 수 있도록 탐색 로직 개선
         document.addEventListener('mouseover', e => {
-            if (!resizeId) return; let dz = e.target.closest('.member-dropzone');
-            if (dz) { let t = tasks.find(x=>x.id===resizeId); let c = 0, curr = parseLocal(t.startDate), end = parseLocal(dz.dataset.date); if (end < curr) c = 1; else { while(curr <= end) { if(isWorkingDay(formatDate(curr))) c++; curr.setDate(curr.getDate() + 1); } } if (t.duration !== c) { t.duration = c; renderAllTasks(); } }
+            if (!resizeId) return; 
+            let t = tasks.find(x => x.id === resizeId);
+            let td = e.target.closest('td'); // 마우스가 위치한 칸(td)을 먼저 찾음
+            
+            if (td && t) { 
+                // 해당 칸 안에 있는 같은 담당자의 dropzone을 찾음
+                let dz = td.querySelector(`.member-dropzone[data-member='${t.member}']`);
+                if (dz && dz.dataset.date) {
+                    let count = 0, curr = parseLocal(t.startDate), end = parseLocal(dz.dataset.date); 
+                    if (end < curr) count = 1; 
+                    else { 
+                        while(curr <= end) { 
+                            if(isWorkingDay(formatDate(curr))) count++; 
+                            curr.setDate(curr.getDate() + 1); 
+                        } 
+                    } 
+                    if (t.duration !== count) { t.duration = count; renderAllTasks(); } 
+                } 
+            }
         });
 
         document.getElementById('file-upload').onchange = e => {
